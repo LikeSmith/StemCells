@@ -98,6 +98,7 @@ class Node(multiprocessing.Process):
 
         while epoch < N_EPOCHS:
             # train network on some batches
+            epoch_done = False
             for _ in range(UPDATE_RATE):
                 bat_img = IMG_TRAIN[perm[batch * BATCH_SIZE:min((batch + 1) * BATCH_SIZE, IMG_TRAIN.shape[0])]]
                 bat_lab = LAB_TRAIN[perm[batch * BATCH_SIZE:min((batch + 1) * BATCH_SIZE, LAB_TRAIN.shape[0])]]
@@ -112,6 +113,7 @@ class Node(multiprocessing.Process):
                     epoch += 1
                     batch = 0
                     perm = np.random.permutation(IMG_TRAIN.shape[0])
+                    epoch_done = True
                     break
 
             logging.debug('Block %d complete, syncing...'%np.ceil(batch/UPDATE_RATE))
@@ -127,7 +129,7 @@ class Node(multiprocessing.Process):
 
             # update weights with DAC algorithm
             del_z = [np.zeros_like(w) for w in mdl.get_weights()]
-            del_K = np.zeros(len(self.conn))
+            del_K = [[np.zeros_like(w) for w in mdl.get_weights()] for _ in self.conn]
 
             for i in range(len(z)):
                 del_z[i] += -GAMMA*z[i]
@@ -139,3 +141,10 @@ class Node(multiprocessing.Process):
                 z[i] += CONSENSUS_RATE*del_z[i]
 
             mdl.set_weights([w+z_i for w, z_i in zip(weights_loc, z)])
+
+            if epoch_done:
+                val_results = mdl.evaluate(IMG_VALID, LAB_VALID, verbose=0)
+                out = 'Epoch %d/%d Complete! Results: ' % (epoch, EPOCHS)
+                for lab, val in zip(mdl.metrics_names, val_results):
+                    out += '(%s: %f)' % (lab, val)
+                logging.info(out)
